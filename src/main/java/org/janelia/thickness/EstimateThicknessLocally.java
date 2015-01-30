@@ -493,7 +493,7 @@ public class EstimateThicknessLocally< M extends Model<M>, L extends Model<L> > 
         	NormalizationInterface normalizer;
         	normalizer = new MaxColumnNormalization();
         	normalizer = new AverageColumnNormalization();
-        	normalizer = new AverageAndStandardDeviationNormalization();
+//        	normalizer = new AverageAndStandardDeviationNormalization();
 //        	normalizer.normalize( coordinates );
         	IJ.log( "" + iteration + "/" + options.nIterations );
         }
@@ -525,13 +525,17 @@ public class EstimateThicknessLocally< M extends Model<M>, L extends Model<L> > 
 				correlationFitModel);
 		
 		
-		final double[] multipliers = EstimateQualityOfSlice.estimateFromMatrix(
-				localMatrix,
-				ArrayImgs.doubles( localWeights, localWeights.length ),
-				this.measurementsMultiplierModel.copy(), // copy for thread safety
-				ArrayImgs.doubles( previousLocalZCoordinates, previousLocalZCoordinates.length ),
-				mirrorAndExtend( estimatedFit, new NLinearInterpolatorFactory< DoubleType >() ),
-				options.multiplierGenerationRegularizerWeight );
+//		final double[] multipliers = EstimateQualityOfSlice.estimateFromMatrix(
+//				localMatrix,
+//				ArrayImgs.doubles( localWeights, localWeights.length ),
+//				this.measurementsMultiplierModel.copy(), // copy for thread safety
+//				ArrayImgs.doubles( previousLocalZCoordinates, previousLocalZCoordinates.length ),
+//				mirrorAndExtend( estimatedFit, new NLinearInterpolatorFactory< DoubleType >() ),
+//				options.multiplierGenerationRegularizerWeight );
+		final double[] multipliers = new double[ localZCoordinates.length ];
+		for ( int i = 0; i < multipliers.length; ++i ) {
+			multipliers[i] = 1.0;
+		}
 		
 		final TreeMap< Long, ArrayList< ConstantPair< Double, Double > > > shifts =
 				ShiftCoordinates.collectShiftsFromMatrix(
@@ -560,67 +564,38 @@ public class EstimateThicknessLocally< M extends Model<M>, L extends Model<L> > 
         
         final int maxPos = localZCoordinates.length - 1;
         
-        final int previousRegularizerCount = localNeighborZCoordinates.size() + 1;
-        
         for ( int pos = 0; pos < localZCoordinates.length; ++pos ) {
         	
-        	double previousPositionRegularizer = 0.0;
+        	
         	mediatedCursor.fwd();
 
         	
-        	final double estimatedRelativeShift = mediatedCursor.get().get() * options.shiftProportion + accumulatedShift;
-        	
-        	
-        	final double fwdVal;
-        	if ( pos < maxPos ) {
-        		fwdVal = localZCoordinates[ pos + 1 ];
-        	} else {
-        		fwdVal = Double.MAX_VALUE;
-        	}
-        	
-        	final double bckVal;
-        	if ( pos > 0 ) {
-        		bckVal = localZCoordinates[ pos - 1 ];
-        	} else {
-        		bckVal = -Double.MAX_VALUE;
-        	}
-        	final double curVal = localZCoordinates[ pos ];
-        	
-        	
-        	final double previousValue = localZCoordinates[ pos ];
-        	double tmpNewPosition = previousValue + estimatedRelativeShift;
+        	final double estimatedRelativeShift   = mediatedCursor.get().get() * options.shiftProportion + accumulatedShift;
+        	double estimatedShiftedPosition = previousLocalZCoordinates[ pos ] + estimatedRelativeShift / ( 1 + options.shiftProportion );
         	
         	
         	
         	
-        	previousPositionRegularizer += previousLocalZCoordinates[ pos ];
         	
+        	
+        	
+        	double previousNeighborsRegularizer = 0.0;
         	for ( final double[] neighbor : localNeighborZCoordinates ) {
-        		previousPositionRegularizer += neighbor[ pos ];
+        		previousNeighborsRegularizer += neighbor[ pos ];
         	}
+        	previousNeighborsRegularizer /= localNeighborZCoordinates.size();
+        	
+        	estimatedShiftedPosition += 
+        			options.coordinateUpdateRegularizerWeight * ( previousLocalZCoordinates[ pos ] + 
+        					options.neighborRegularizerWeight * previousNeighborsRegularizer ) / 
+        					( 1 + options.neighborRegularizerWeight );
+        	estimatedShiftedPosition /= ( 1 + options.coordinateUpdateRegularizerWeight );
 
         	
-        	previousPositionRegularizer /= previousRegularizerCount;
         	
-        	tmpNewPosition = options.coordinateUpdateRegularizerWeight * pos + 
-        			tmpNewPosition * newPositionVsGridWeight;
-        	tmpNewPosition = options.neighborRegularizerWeight * previousPositionRegularizer + 
-        			tmpNewPosition * newPositionVsNeighborWeight;
+        	localZCoordinates[ pos ] = estimatedShiftedPosition;
         	
-        	double diff;
-        	if ( tmpNewPosition < bckVal ) {
-        		diff = bckVal - ( curVal );
-//        		estimatedRelativeShift = Math.max( estimatedRelativeShift, diff * options.shiftProportion );
-        		tmpNewPosition = curVal + diff * options.shiftProportion; 
-        	} else if ( tmpNewPosition > fwdVal ) {
-        		diff = fwdVal - ( curVal );
-//        		estimatedRelativeShift = Math.min( estimatedRelativeShift, diff * options.shiftProportion );
-        		tmpNewPosition = curVal + diff * options.shiftProportion;
-        	} // leave shift untouched otherwise
-        	
-        	localZCoordinates[ pos ] = tmpNewPosition;
-        	
-        	accumulatedShift = tmpNewPosition - curVal;
+        	accumulatedShift = estimatedShiftedPosition - previousLocalZCoordinates[ pos ];
 
         }
 		

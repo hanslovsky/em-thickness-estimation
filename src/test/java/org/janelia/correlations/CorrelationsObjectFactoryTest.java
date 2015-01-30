@@ -1,5 +1,8 @@
 package org.janelia.correlations;
 
+import ij.ImageJ;
+
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map.Entry;
@@ -11,6 +14,7 @@ import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.array.ArrayImg;
 import net.imglib2.img.array.ArrayImgs;
 import net.imglib2.img.basictypeaccess.array.FloatArray;
+import net.imglib2.img.display.imagej.ImageJFunctions;
 import net.imglib2.type.numeric.real.DoubleType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.view.Views;
@@ -33,6 +37,7 @@ public class CorrelationsObjectFactoryTest {
 	private final long[] radius = new long[] { 5 };
 	private final ArrayImg< FloatType, FloatArray > randomImage = ArrayImgs.floats( 10, 10, 5 );
 	private final Random rng = new Random( 100 );
+	private final int nThreads = 100;
 
 	@Before
 	public void setUp() throws Exception {
@@ -94,7 +99,7 @@ public class CorrelationsObjectFactoryTest {
 				);
 		final XYSampler sampler = new SparseXYSampler(coords);
 		
-		final SparseCorrelationsObjectFactory<FloatType> factory = new SparseCorrelationsObjectFactory< FloatType >( imgs, sampler);
+		final SparseCorrelationsObjectFactory<FloatType> factory = new SparseCorrelationsObjectFactory< FloatType >( imgs, sampler, nThreads );
 		final CorrelationsObjectInterface sco = factory.create( range, radius );
 		
 		final TreeMap<Long, Meta> metaMap = sco.getMetaMap();
@@ -105,12 +110,15 @@ public class CorrelationsObjectFactoryTest {
 			Assert.assertEquals( (long)entry.getKey(), meta.zPosition );
 		}
 		
+		
 		for ( final SerializableConstantPair<Long, Long> s : sampler ) {
 			for ( int z = 0; z < imgs.dimension( 2 ); ++z ) {
 				final ConstantPair<RandomAccessibleInterval<DoubleType>, RandomAccessibleInterval<DoubleType>> corrs = sco.extractDoubleCorrelationsAt( s.getA(), s.getB(), z);
 				Assert.assertNotEquals( corrs, null );
-				for ( final DoubleType c : Views.flatIterable( corrs.getA() ) )
+				for ( final DoubleType c : Views.flatIterable( corrs.getA() ) ) {
+					if ( Double.isNaN( c.get() ) ) Assert.fail( "WOHER NAN?" );
 					Assert.assertEquals( 1.0,  c.get(), 0.0 );
+				}
 			}
 						
 		}
@@ -122,7 +130,7 @@ public class CorrelationsObjectFactoryTest {
 	public void testEqual() {
 		
 		final CorrelationsObjectFactory<FloatType> dcof       = new CorrelationsObjectFactory<FloatType>( randomImage );
-		final SparseCorrelationsObjectFactory<FloatType> scof = new SparseCorrelationsObjectFactory<FloatType>( randomImage );
+		final SparseCorrelationsObjectFactory<FloatType> scof = new SparseCorrelationsObjectFactory<FloatType>( randomImage, nThreads );
 		
 		final CorrelationsObjectInterface dco = dcof.create( range, radius );
 		final CorrelationsObjectInterface sco = scof.create( range, radius );

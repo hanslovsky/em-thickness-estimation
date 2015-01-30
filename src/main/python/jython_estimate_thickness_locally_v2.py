@@ -46,6 +46,7 @@ from org.janelia.correlations import CorrelationsObject
 from org.janelia.thickness import InferFromCorrelationsObject
 from org.janelia.thickness import EstimateThicknessLocally
 from org.janelia.thickness.lut import SingleDimensionLUTRealTransform
+from org.janelia.thickness.lut import SingleDimensionLUTGrid
 from org.janelia.thickness.inference.visitor import ActualCoordinatesTrackerVisitor
 from org.janelia.thickness.inference.visitor import ApplyTransformToImagesAndAverageVisitor
 from org.janelia.thickness.inference.visitor import ApplyTransformToImageVisitor
@@ -224,32 +225,35 @@ if __name__ == "__main__":
     t0 = time.time()
     print t0 - t0
 
-    correlationRanges = range(8, 16, 70)
+    correlationRanges = range(20, 56, 70000)
     # root = '/data/hanslovskyp/playground/pov-ray/variable_thickness_subset2/2200-2799/scale/0.04/200x200+100+100'
     # root = '/groups/saalfeld/home/hanslovskyp/playground/test_data/davi/intensity_corrected/crop/test/'
-    root = '/data/hanslovskyp/jain-nobackup/234_data_downscaled/crop-150x150+75+175'
+    # root = '/data/hanslovskyp/jain-nobackup/234_data_downscaled/crop-150x150+75+175'
+    # root = '/data/hanslovskyp/ken_crop_from_john/sub_stack_01/substacks/sub_stack_01'
     # root = '/data/hanslovskyp/jain-nobackup/234_data_downscaled/'
+    root = '/data/hanslovskyp/jain-nobackup/234_data_downscaled/crop-100x100+100+200'
     imgSource = FolderOpener().open( '%s/data' % root.rstrip('/') )
     stackSource = imgSource.getStack()
     conv = ImageConverter( imgSource )
     conv.convertToGray32()
-    nIterations = 2
+    nIterations = 10
     nThreads = 48
     scale = 1.0
     xyScale = 1.0
     doXYScale = False
-    step = 4
+    step = 10
     radius = [16, 16]
     options = EstimateThicknessLocally.Options.generateDefaultOptions()
     options.nIterations = nIterations
     options.nThreads = nThreads
-    options.neighborRegularizerWeight = 0.1
-    options.shiftProportion = 0.8
-    options.coordinateUpdateRegularizerWeight = 0.01
+    options.neighborRegularizerWeight = 0.3 # w_2 - how strong is regulariztion on neighbors compared to regularization on previous position ( choose from [0, inf) )
+    options.shiftProportion = 0.2 # w_0 - how much of the actual estimated shift do you want to go? ( choose from (0, 1) )
+    options.coordinateUpdateRegularizerWeight = 0.3 # w_1 - how strongly should previous position and neighbors regularize? ( choose from [0, inf) )
     # if you want to specify values for options, do:
     # options.multiplierGenerationRegularizerWeight = <value>
     # or equivalent
     interpolatorFactory = FloorInterpolatorFactory() # for rendering result image
+    
 
     infoString  = '\n[information]\n'
     infoString += 'cross-correlation-block-radius\t%s\n' % str( radius )
@@ -280,7 +284,7 @@ if __name__ == "__main__":
              
              
              
-       
+        
              
              
         cc = CorrelationsCreator(img, radius)
@@ -418,11 +422,11 @@ if __name__ == "__main__":
         t5 = time.time()
         print t5 - t4
 
-        resultSmoothed2D = ArrayImgs.doubles( result.dimension( 0 ), result.dimension( 1 ), result.dimension( 2 ) )
-        sigma=[0.5, 0.5,0.0001]
-        Gauss3.gauss( sigma, result, resultSmoothed2D )
-        result = resultSmoothed2D
-        infoString += 'GaussianConvolutionSigma = [%f,%f,%f]\n' % tuple( sigma )
+        #resultSmoothed2D = ArrayImgs.doubles( result.dimension( 0 ), result.dimension( 1 ), result.dimension( 2 ) )
+        #sigma=[0.5, 0.5,0.0001]
+        #Gauss3.gauss( sigma, result, resultSmoothed2D )
+        #result = resultSmoothed2D
+        #infoString += 'GaussianConvolutionSigma = [%f,%f,%f]\n' % tuple( sigma )
 
         resultFolder = root.rstrip('/') + '/' + str( datetime.datetime.now() ).split('.')[0]
         resultFolder = create_with_counter_if_existing( resultFolder )
@@ -438,7 +442,7 @@ if __name__ == "__main__":
         for i in xrange( showStack.getSize() ):
             ip = showStack.getProcessor( i + 1 )
             ip.add( -i )
-        # show2.show()
+        show2.show()
 
         shiftsPath         = resultFolder.rstrip('/') + '/shifts.tif'
         relativeShiftsPath = resultFolder.rstrip('/') + '/relativeShifts.tif'
@@ -447,7 +451,8 @@ if __name__ == "__main__":
         reslicedPath       = resultFolder.rstrip('/') + '/reslicedCombined.tif'
         differencePath     = resultFolder.rstrip('/') + '/difference.tif'
 
-        tf = InferFromCorrelationsObject.convertToTransformField2D( result, step, step, img.getWidth(), img.getHeight() )
+        # tf = InferFromCorrelationsObject.convertToTransformField2D( result, step, step, img.getWidth(), img.getHeight() )
+        tf = SingleDimensionLUTGrid( 3, 3, result, 2, [ 1.0*step ], [ 0.0 ] )
         interpolated = Views.interpolate( Views.extendValue( ImagePlusImgs.from( imgSource), FloatType( Float.NaN ) ), interpolatorFactory )
 
         resultImage = ImagePlusImgs.floats( imgSource.getWidth(), imgSource.getHeight(), imgSource.getStack().getSize() )

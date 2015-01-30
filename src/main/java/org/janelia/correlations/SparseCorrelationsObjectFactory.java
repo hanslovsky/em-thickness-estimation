@@ -1,8 +1,16 @@
 package org.janelia.correlations;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.TreeMap;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import net.imglib2.RandomAccess;
 import net.imglib2.RandomAccessibleInterval;
@@ -26,33 +34,36 @@ public class SparseCorrelationsObjectFactory < T extends RealType< T > > {
 	private final RandomAccessibleInterval< T > images;
 	private final XYSampler sampler;
 	private final CrossCorrelation.TYPE type;
+	private final int nThreads;
 	
 	
 	/**
 	 * @param images
 	 */
-	public SparseCorrelationsObjectFactory(final RandomAccessibleInterval<T> images, final XYSampler sampler, final CrossCorrelation.TYPE type ) {
+	public SparseCorrelationsObjectFactory(final RandomAccessibleInterval<T> images, final XYSampler sampler, final CrossCorrelation.TYPE type, final int nThreads ) {
 		super();
 		this.images = images;
 		this.sampler = sampler;
 		this.type = type;
+		this.nThreads = nThreads;
 	}
 	
-	public SparseCorrelationsObjectFactory(final RandomAccessibleInterval<T> images, final XYSampler sampler ) {
-		this( images, sampler, CrossCorrelation.TYPE.STANDARD );
+	public SparseCorrelationsObjectFactory(final RandomAccessibleInterval<T> images, final XYSampler sampler, final int nThreads ) {
+		this( images, sampler, CrossCorrelation.TYPE.STANDARD, nThreads );
 	}
 	
-	public SparseCorrelationsObjectFactory(final RandomAccessibleInterval<T> images, final CrossCorrelation.TYPE type ) {
-		this(images, new DenseXYSampler( images.dimension(0), images.dimension(1) ), type );
+	public SparseCorrelationsObjectFactory(final RandomAccessibleInterval<T> images, final CrossCorrelation.TYPE type, final int nThreads ) {
+		this(images, new DenseXYSampler( images.dimension(0), images.dimension(1) ), type, nThreads );
 	}
 	
 	
-	public SparseCorrelationsObjectFactory(final RandomAccessibleInterval<T> images) {
-		this( images, new DenseXYSampler( images.dimension(0), images.dimension(1) ) );
+	public SparseCorrelationsObjectFactory(final RandomAccessibleInterval<T> images, final int nThreads ) {
+		this( images, new DenseXYSampler( images.dimension(0), images.dimension(1) ), nThreads );
 	}
 
 
 	public CorrelationsObjectInterface create( final long range, final long[] radius ) {
+
 		
 		final long stop = images.dimension( 2 ) - 1;
 		
@@ -62,12 +73,26 @@ public class SparseCorrelationsObjectFactory < T extends RealType< T > > {
 		final Iterator<SerializableConstantPair<Long, Long>> sampleIterator = sampler.iterator();
 		int count = 0;
 		while ( sampleIterator.hasNext() ) {
+			ExecutorService threadpool = Executors.newFixedThreadPool( this.nThreads );
+			ArrayList<Callable<Void>> callables = new ArrayList< Callable< Void > >();
 			final SerializableConstantPair<Long, Long> xy = sampleIterator.next();
 			// as we just created correlations, nothing present at XY yet; it is the user's responsibility to make sure, there's no duplicate coordinates in sampler
 			final TreeMap<Long, double[]> correlationsAtXY = new TreeMap<Long, double[]>();
 			correlations.put( xy, correlationsAtXY );
 			final Long x = xy.getA();
 			final Long y = xy.getB();
+			
+			for ( long zRef = 0; zRef <= stop; ++ zRef ) {
+				final long lowerBound = Math.max( 0, zRef - range);
+				final long upperBound = Math.min( stop, zRef + range );
+				
+				final Meta meta = new Meta();
+				meta.zCoordinateMin = lowerBound;
+				meta.zCoordinateMax = upperBound + 1;
+				meta.zPosition      = zRef;
+				final double[] correlationsAt = new double[ (int) (meta.zCoordinateMax - meta.zCoordinateMin) ];
+				correlationsAtXY.put( zRef, correlationsAt);
+			}
 			
 			for ( long zRef = 0; zRef <= stop; ++zRef ) {
 				
@@ -83,33 +108,58 @@ public class SparseCorrelationsObjectFactory < T extends RealType< T > > {
 					metaMap.put( zRef, meta );
 				
 				// as we just created correlationsAtXY, nothing present at zRef yet
-				final double[] correlationsAt = new double[ (int) (meta.zCoordinateMax - meta.zCoordinateMin) ];
-				correlationsAtXY.put( zRef, correlationsAt);
+				final double[] correlationsAt = correlationsAtXY.get( zRef );
 				
-				for ( long z = lowerBound; z <= upperBound; ++z ) {
-					final int relativePosition = (int) (z - lowerBound);
+				for ( long z = zRef; z <= stop; ++z ) {
 					
-					if ( z < zRef ) {
-						final Meta previousMeta = metaMap.get( z );
-						correlationsAt[ relativePosition ] = correlationsAtXY.get( z )[ (int) (zRef - previousMeta.zCoordinateMin) ];
-					} else if ( z == zRef ) {
-						correlationsAt[ relativePosition ] = 1.0;
-					} else {
-						final CrossCorrelation<T, T, FloatType > cc = new CrossCorrelation< T, T, FloatType >(
-								Views.hyperSlice( images, 2, z ),
-								Views.hyperSlice( images, 2, zRef ),
-								radius,
-								this.type,
-								new FloatType() );
-						final CrossCorrelationRandomAccess ra = cc.randomAccess();
-						ra.setPosition( new long[] { xy.getA(), xy.getB() } );
-						correlationsAt[ relativePosition ] = ra.get().getRealDouble();
+					final long lowerBoundOther         = Math.max( 0, z - range );
+					final long upperBoundOther         = Math.min( stop, z + range );
+					final double[] correlationsAtOther = correlationsAtXY.get( z );
+							
+					final int relativePosition1 = (int) ( z - lowerBound );
+					final int relativePosition2 = (int) ( zRef - lowerBoundOther );
+					
+					if ( z == zRef ) {
+						correlationsAt[ relativePosition1 ] = 1.0;
+						continue;
 					}
+					
+					final long zf    = z;
+					final long zReff = zRef;
+					
+					
+					callables.add( new Callable<Void>() {
+
+						@Override
+						public Void call() throws Exception {
+							final CrossCorrelation<T, T, FloatType > cc = new CrossCorrelation< T, T, FloatType >(
+									Views.hyperSlice( images, 2, zf ),
+									Views.hyperSlice( images, 2, zReff ),
+									radius,
+									type,
+									new FloatType() );
+							final CrossCorrelationRandomAccess ra = cc.randomAccess();
+							ra.setPosition( new long[] { x, y } );
+							double val = ra.get().getRealDouble();
+							correlationsAt[ relativePosition1 ] = val;
+							correlationsAtOther[ relativePosition2 ] = val;
+							return null;
+						}
+					});
+					
 				}
 				
 			}
 			++count;
+			try {
+				threadpool.invokeAll( callables );
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
+		
+		
 		
 		final SparseCorrelationsObject sco = new SparseCorrelationsObject();
 

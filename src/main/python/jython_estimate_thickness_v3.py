@@ -210,16 +210,20 @@ if __name__ == "__main__":
     t0 = time.time()
     print t0 - t0
 
-    correlationRanges = range( 54, 1001, 222221 )
-    nImages = 600
+    correlationRanges = range( 20, 1001, 222221 )
+    nImages = 200
     # root = '/data/hanslovskyp/playground/pov-ray/constant_thickness=5/850-1149/scale/0.05/250x250+125+125'
     # root = '/data/hanslovskyp/export_from_nobackup/sub_stack_01/data/substacks/01/'
     # root = '/ssd/hanslovskyp/crack_from_john/substacks/03/'
     # root = '/ssd/hanslovskyp/forPhilipp/substacks/03/'
     # root = '/ssd/hanslovskyp/boergens/substacks/01/'
+    # root = '/data/hanslovskyp/forPhilipp/substacks/03/'
     # root = '/ssd/hanslovskyp/tweak_CutOn4-15-2013_ImagedOn1-27-2014/substacks/01/'
-    root = '/data/hanslovskyp/forPhilipp/substacks/03/'
+    # root = '/data/hanslovskyp/playground/pov-ray/variable_thickness_subset2/2200-2799/scale/0.04/200x200+100+100/'
+    # root = '/data/hanslovskyp/playground/pov-ray/constant_thickness=5/850-1149/scale/0.05/250x250+125+125/'
     # root = '/ssd/hanslovskyp/tweak_CutOn4-15-2013_ImagedOn1-27-2014/substacks/01/'
+    root = '/ssd/hanslovskyp/tweak_CutOn4-15-2013_ImagedOn1-27-2014/substacks/01'
+    root = '/groups/saalfeld/home/hanslovskyp/local/tmp/frequency-limited-noise/'
     IJ.run("Image Sequence...", "open=%s/data number=%d sort" % ( root.rstrip(), nImages ) );
     # imgSource = FolderOpener().open( '%s/data' % root.rstrip('/') )
     imgSource = IJ.getImage()
@@ -230,22 +234,26 @@ if __name__ == "__main__":
     nThreads = 1
     scale = 1.0
     # stackMin, stackMax = ( None, 300 )
-    xyScale = 0.25 # fibsem (crack from john) ~> 0.25
-    # xyScale = 0.1 # fibsem (crop from john) ~> 0.1?
-    doXYScale = True
+    # xyScale = 0.25 # fibsem (crack from john) ~> 0.25
+    xyScale = 0.1 # fibsem (crop from john) ~> 0.1? # boergens
+    doXYScale = False
     matrixSize = nImages
     matrixScale = 2.0
-    serializeCorrelations = True
+    serializeCorrelations = False
     deserializeCorrelations = not serializeCorrelations
     options = InferFromCorrelationsObject.Options.generateDefaultOptions()
     options.shiftProportion = 0.6
-    options.nIterations = 200
+    options.nIterations = 50
     options.nThreads = nThreads
     options.windowRange = 100
-    options.shiftsSmoothingSigma = 4
+    options.shiftsSmoothingSigma = 1.5
     options.shiftsSmoothingRange = 0
     options.withRegularization = True
-    options.minimumSectionThickness = 0.1
+    options.minimumSectionThickness = -Double.NaN
+    options.multiplierRegularizerDecaySpeed = 50
+    options.multiplierWeightsSigma = 0.04 # weights[ i ] = exp( -0.5*(multiplier[i] - 1.0)^2 / multiplierWeightSigma^2 )
+    options.multiplierGenerationRegularizerWeight = 0.1
+    options.multiplierEstimationIterations = 10
     thickness_estimation_repo_dir = '/groups/saalfeld/home/hanslovskyp/workspace/em-thickness-estimation'
 
     if not doXYScale:
@@ -357,12 +365,15 @@ if __name__ == "__main__":
             co = Serialization.deserializeGeneric( serializationString, co )
         else:
             
-        
+            tCorrStart = time.time()
             samples = ArrayList()
             samples.add( SerializableConstantPair.toPair( Long(0), Long(0) ) )
             sampler = SparseXYSampler( samples )
-            cf      = SparseCorrelationsObjectFactory( ImagePlusAdapter.wrap( img ), sampler )
+            cf      = SparseCorrelationsObjectFactory( ImagePlusAdapter.wrap( img ), sampler, nThreads )
             co      = cf.create( correlationRange, [img.getWidth(), img.getHeight()] )
+            tCorrEnd = time.time()
+            tCorr    = tCorrEnd - tCorrStart
+            print "Correlations calculation time:  ", tCorr
             Serialization.serializeGeneric( co, serializationString )
         
         t3 = time.time()
@@ -448,7 +459,12 @@ if __name__ == "__main__":
         # if you want to specify values for options, do:
         # options.multiplierGenerationRegularizerWeight = <value>
         # or equivalent
-        result = inference.estimateZCoordinates( 0, 0, startingCoordinates, matrixTracker, options )
+        tInfStart = time.time()
+        result    = inference.estimateZCoordinates( 0, 0, startingCoordinates, matrixTracker, options )
+        tInfEnd   = time.time()
+        tInf      = tInfEnd - tInfStart
+        print "Inference time:  ", tInf
+
              
              
         # array = jarray.zeros( result.dimension(0), 'd' )
