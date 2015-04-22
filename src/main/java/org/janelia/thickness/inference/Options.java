@@ -25,22 +25,16 @@ public class Options implements Serializable {
 
 	public static Options generateDefaultOptions() {
 	        final Options result = new Options();
-	        result.multiplierGenerationRegularizerWeight = 0.01;
-	        result.coordinateUpdateRegularizerWeight = 0.01;
-	        result.shiftProportion = 0.5;
-	        result.nIterations = 1;
-	        result.nThreads = 1;
+	        result.multiplierGenerationRegularizerWeight = 0.1;
+	        result.coordinateUpdateRegularizerWeight = 0.0;
+	        result.shiftProportion = 0.6;
+	        result.nIterations = 100;
 	        result.comparisonRange = 10;
-	        result.neighborRegularizerWeight = 0.05;
-	        result.minimumSectionThickness = 0.1;
-	        result.windowRange = 150;
-	        result.shiftsSmoothingSigma = 4.0;
-	        result.shiftsSmoothingRange = 10;
+	        result.minimumSectionThickness = 0.01;
 	        result.withRegularization = true;
-	        result.multiplierRegularizerDecaySpeed = 10000.0;
-	        result.multiplierWeightsSigma = 0.2;
 	        result.multiplierEstimationIterations = 10;
 	        result.withReorder = true;
+	        result.nThreads = Runtime.getRuntime().availableProcessors();
 	        return result;
 	}
 	
@@ -48,18 +42,12 @@ public class Options implements Serializable {
 	public Double coordinateUpdateRegularizerWeight; // coordinate_regularized = predicted * ( 1 - w ) + original * w
 	public Double shiftProportion; // actual_shift = shift * shiftProportion
 	public Integer nIterations; // number of iterations
-	public Integer nThreads; // number of threads
 	public Integer comparisonRange; // range for cross correlations
-	public Double neighborRegularizerWeight;
 	public Double minimumSectionThickness;
-	public Integer windowRange;
-	public Double shiftsSmoothingSigma;
-	public Integer shiftsSmoothingRange;
 	public Boolean withRegularization;
-	public Double multiplierRegularizerDecaySpeed;
-	public Double multiplierWeightsSigma;
 	public Integer multiplierEstimationIterations;
 	public Boolean withReorder;
+	public Integer nThreads;
 	
 	public static Options read( final String filename ) {
 		final String defaultString = String.format( "Options.read( \"%s\" )", filename );

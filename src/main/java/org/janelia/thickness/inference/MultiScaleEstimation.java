@@ -101,7 +101,7 @@ public class MultiScaleEstimation {
 			
 			categorizer.setState( i );
 			
-			final ExecutorService es = Executors.newFixedThreadPool( options[i].nThreads );
+			final ExecutorService es = Executors.newFixedThreadPool( 1 ); // do not use es here?
 			
 			final int stepX = steps[i][0];
 			final int stepY = steps[i][1];
@@ -147,7 +147,7 @@ public class MultiScaleEstimation {
 								new OpinionMediatorModel<TranslationModel1D>( new TranslationModel1D() ) );
 						
 						final double[] lut = inference.estimateZCoordinates( currMat, arr, new LazyVisitor(), categorizer, currentOptions );
-						IJ.log( "Iterating at c=" + x + "x" + y + " " + Arrays.toString( lut ) );
+						// IJ.log( "Iterating at c=" + x + "x" + y + " " + Arrays.toString( lut ) );
 						final ListRandomAccess<double[]> rax = coordinateListImage.randomAccess();
 						rax.setPosition( new int[] { x, y } );
 						rax.set( lut );
@@ -157,11 +157,19 @@ public class MultiScaleEstimation {
 				
 			}
 			
-			try {
-				es.invokeAll(tasks);
-			} catch (final InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+			
+			{
+				IJ.log( "before inference" );
+				final long t0 = System.currentTimeMillis();
+				try {
+					es.invokeAll(tasks);
+				} catch (final InterruptedException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				final long t1 = System.currentTimeMillis();
+				final long diff = t1 - t0;
+				IJ.log( "after inference (t=" + diff + "ms)" );
 			}
 
 			
